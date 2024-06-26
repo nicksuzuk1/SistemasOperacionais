@@ -64,5 +64,5 @@ Tempo total: [tempo em segundos] segundos
 - **main:** Função principal que orquestra a execução das operações de leitura, soma, multiplicação, redução e escrita das matrizes, além de medir o tempo de execução de cada operação.
 
 ### Autores
-José Vitor Dutra Antônio
-Nicolas Suzuki
+- José Vitor Dutra Antônio
+- Nicolas Suzuki
