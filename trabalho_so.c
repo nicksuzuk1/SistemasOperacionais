@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <windows.h>
+#include <pthread.h>
 #include <time.h>
 
 typedef struct {
@@ -14,7 +14,7 @@ typedef struct {
     int end;
 } ThreadData;
 
-// Essa funcao le uma matriz de um arquivo e a armazena na memoria.
+// Função para ler uma matriz de um arquivo e armazená-la na memória.
 void readMatrix(const char* filename, int **matrix, int n) {
     FILE *file = fopen(filename, "r");
     if (!file) {
@@ -27,7 +27,7 @@ void readMatrix(const char* filename, int **matrix, int n) {
     fclose(file);
 }
 
-// Essa funcao escreve uma matriz em um arquivo.
+// Função para escrever uma matriz em um arquivo.
 void writeMatrix(const char* filename, int **matrix, int n) {
     FILE *file = fopen(filename, "w");
     if (!file) {
@@ -42,17 +42,17 @@ void writeMatrix(const char* filename, int **matrix, int n) {
     fclose(file);
 }
 
-// Essa funcao realiza a soma das matrizes A e B, armazenando o resultado na matriz D.
-DWORD WINAPI addMatrices(LPVOID arg) {
+// Função para realizar a soma das matrizes A e B, armazenando o resultado na matriz D.
+void* addMatrices(void* arg) {
     ThreadData *data = (ThreadData*) arg;
     for (int i = data->start; i < data->end; i++)
         for (int j = 0; j < data->n; j++)
             data->D[i][j] = data->A[i][j] + data->B[i][j];
-    return 0;
+    return NULL;
 }
 
-// Essa funcao realiza a multiplicacao das matrizes D e C, armazenando o resultado na matriz E.
-DWORD WINAPI multiplyMatrices(LPVOID arg) {
+// Função para realizar a multiplicação das matrizes D e C, armazenando o resultado na matriz E.
+void* multiplyMatrices(void* arg) {
     ThreadData *data = (ThreadData*) arg;
     for (int i = data->start; i < data->end; i++)
         for (int j = 0; j < data->n; j++) {
@@ -60,18 +60,22 @@ DWORD WINAPI multiplyMatrices(LPVOID arg) {
             for (int k = 0; k < data->n; k++)
                 data->E[i][j] += data->D[i][k] * data->C[k][j];
         }
-    return 0;
+    return NULL;
 }
 
-// Essa funcao soma todos os elementos da matriz E e retorna o resultado.
-DWORD WINAPI reduceMatrix(LPVOID arg) {
+// Função para somar todos os elementos da matriz E e retornar o resultado.
+void* reduceMatrix(void* arg) {
     ThreadData *data = (ThreadData*) arg;
     int *result = (int*) malloc(sizeof(int));
+    if (!result) {
+        perror("Erro ao alocar memória para resultado");
+        exit(EXIT_FAILURE);
+    }
     *result = 0;
     for (int i = data->start; i < data->end; i++)
         for (int j = 0; j < data->n; j++)
             *result += data->E[i][j];
-    return (DWORD)result;
+    pthread_exit(result);
 }
 
 int main(int argc, char* argv[]) {
@@ -81,7 +85,7 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    // Declara as variaveis com os argumentos passados
+    // Declara as variáveis com os argumentos passados
     int T = atoi(argv[1]);
     int n = atoi(argv[2]);
     const char *arqA = argv[3];
@@ -90,7 +94,7 @@ int main(int argc, char* argv[]) {
     const char *arqD = argv[6];
     const char *arqE = argv[7];
 
-    // Alocar memoria para as matrizes
+    // Aloca memória para as matrizes
     int **A = (int**) malloc(n * sizeof(int*));
     int **B = (int**) malloc(n * sizeof(int*));
     int **C = (int**) malloc(n * sizeof(int*));
@@ -104,7 +108,7 @@ int main(int argc, char* argv[]) {
         E[i] = (int*) malloc(n * sizeof(int));
     }
 
-    // Medicao do tempo total de execucao
+    // Medição do tempo total de execução
     clock_t startTotal = clock();
 
     // Passo 1: Leitura das Matrizes A e B
@@ -113,9 +117,10 @@ int main(int argc, char* argv[]) {
 
     // Passo 2: Soma das Matrizes A e B = D
     clock_t startSum = clock();
-    HANDLE *threads = (HANDLE*) malloc(T * sizeof(HANDLE));
+    pthread_t *threads = (pthread_t*) malloc(T * sizeof(pthread_t));
     ThreadData *threadData = (ThreadData*) malloc(T * sizeof(ThreadData));
     int chunkSize = n / T;
+
     for (int i = 0; i < T; i++) {
         threadData[i].n = n;
         threadData[i].A = A;
@@ -123,54 +128,57 @@ int main(int argc, char* argv[]) {
         threadData[i].D = D;
         threadData[i].start = i * chunkSize;
         threadData[i].end = (i == T - 1) ? n : (i + 1) * chunkSize;
-        threads[i] = CreateThread(NULL, 0, addMatrices, &threadData[i], 0, NULL);
+        pthread_create(&threads[i], NULL, addMatrices, &threadData[i]);
     }
-    WaitForMultipleObjects(T, threads, TRUE, INFINITE);
+    for (int i = 0; i < T; i++) {
+        pthread_join(threads[i], NULL);
+    }
     clock_t endSum = clock();
 
-    // Passo 3: Gravacao da Matriz D
+    // Passo 3: Gravação da Matriz D
     writeMatrix(arqD, D, n);
 
     // Passo 4: Leitura da Matriz C
     readMatrix(arqC, C, n);
 
-    // Passo 5: Multiplicacao das Matrizes D e C = E
+    // Passo 5: Multiplicação das Matrizes D e C = E
     clock_t startMult = clock();
     for (int i = 0; i < T; i++) {
         threadData[i].C = C;
         threadData[i].E = E;
-        threads[i] = CreateThread(NULL, 0, multiplyMatrices, &threadData[i], 0, NULL);
+        pthread_create(&threads[i], NULL, multiplyMatrices, &threadData[i]);
     }
-    WaitForMultipleObjects(T, threads, TRUE, INFINITE);
+    for (int i = 0; i < T; i++) {
+        pthread_join(threads[i], NULL);
+    }
     clock_t endMult = clock();
 
-    // Passo 6: Gravacao da Matriz E
+    // Passo 6: Gravação da Matriz E
     writeMatrix(arqE, E, n);
 
-    // Passo 7: Reducao da Matriz E
+    // Passo 7: Redução da Matriz E
     clock_t startRed = clock();
     int finalSum = 0;
     for (int i = 0; i < T; i++) {
         int *partialSum;
-        threads[i] = CreateThread(NULL, 0, reduceMatrix, &threadData[i], 0, NULL);
-        WaitForSingleObject(threads[i], INFINITE);
-        GetExitCodeThread(threads[i], (LPDWORD)&partialSum);
+        pthread_create(&threads[i], NULL, reduceMatrix, &threadData[i]);
+        pthread_join(threads[i], (void**)&partialSum);
         finalSum += *partialSum;
         free(partialSum);
     }
     clock_t endRed = clock();
 
-    // Medicao do tempo final
+    // Medição do tempo final
     clock_t endTotal = clock();
 
-    // Exibicao dos resultados
+    // Exibição dos resultados
     printf("Reducao: %d\n", finalSum);
     printf("Tempo Soma: %f segundos\n", (double)(endSum - startSum) / CLOCKS_PER_SEC);
     printf("Tempo Multiplicacao: %f segundos\n", (double)(endMult - startMult) / CLOCKS_PER_SEC);
     printf("Tempo Reducao: %f segundos\n", (double)(endRed - startRed) / CLOCKS_PER_SEC);
     printf("Tempo total: %f segundos\n", (double)(endTotal - startTotal) / CLOCKS_PER_SEC);
 
-    // Liberacao da memoria alocada
+    // Liberação da memória alocada
     for (int i = 0; i < n; i++) {
         free(A[i]);
         free(B[i]);
@@ -188,3 +196,4 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
