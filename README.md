@@ -39,7 +39,7 @@ Onde:
 ### Exemplo de Execução
 
 ```sh
-./matrix_operations 4 100 matrixA.dat matrixB.dat matrixC.dat matrixD.dat matrixE.dat
+./matrix_operations 4 100 arqA.dat arqB.dat arqC.dat arqD.dat arqE.dat
 ```
 
 ### Saída
